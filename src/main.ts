@@ -1,11 +1,12 @@
 import { NestFactory } from '@nestjs/core';
-import { AppModule } from './app.module';
 import * as nodeCrypto from 'crypto';
+
+const g = globalThis as unknown as { crypto?: unknown };
+if (!g.crypto) g.crypto = nodeCrypto as unknown;
 
 async function bootstrap() {
   try {
-    const g = globalThis as unknown as { crypto?: unknown };
-    if (!g.crypto) g.crypto = nodeCrypto as unknown;
+    const { AppModule } = await import('./app.module');
 
     const app = await NestFactory.create(AppModule);
     app.enableCors();
