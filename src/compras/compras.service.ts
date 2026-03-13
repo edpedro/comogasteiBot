@@ -4,7 +4,7 @@ import { Repository } from 'typeorm';
 import { Compra } from './compra.entity';
 import { Cartao } from '../cartoes/cartao.entity';
 import { CartoesService } from '../cartoes/cartoes.service';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 
 @Injectable()
 export class ComprasService {
@@ -30,7 +30,7 @@ export class ComprasService {
     const valorTotal = Number(data.valor);
     const parcelas = data.parcelas || 1;
     const valorParcela = valorTotal / parcelas;
-    const grupoId = uuidv4();
+    const grupoId = randomUUID();
 
     const dataCompraStr =
       typeof data.dataCompra === 'string'
