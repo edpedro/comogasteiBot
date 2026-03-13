@@ -23,11 +23,11 @@ export class Compra {
   tipo: 'CREDITO' | 'DEBITO' | 'DINHEIRO' | 'PIX';
 
   @Column({ name: 'cartao_id', nullable: true })
-  cartaoId: string;
+  cartaoId: string | null;
 
-  @ManyToOne(() => Cartao, (cartao) => cartao.compras)
+  @ManyToOne(() => Cartao, (cartao) => cartao.compras, { nullable: true })
   @JoinColumn({ name: 'cartao_id' })
-  cartao: Cartao;
+  cartao: Cartao | null;
 
   @Column()
   nome: string; // quem comprou
@@ -48,13 +48,13 @@ export class Compra {
   parcelaAtual: number;
 
   @Column({ type: 'date', name: 'data_compra' })
-  dataCompra: Date;
+  dataCompra: string;
 
   @Column({ type: 'time', name: 'hora_compra', nullable: true })
   horaCompra: string;
 
   @Column({ type: 'date', name: 'mes_referencia' })
-  mesReferencia: Date;
+  mesReferencia: string;
 
   @Column({ default: false })
   cancelada: boolean;

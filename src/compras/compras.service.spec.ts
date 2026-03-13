@@ -6,13 +6,14 @@ import { CartoesService } from '../cartoes/cartoes.service';
 
 describe('ComprasService', () => {
   let service: ComprasService;
-  let compraRepository: { create: jest.Mock; save: jest.Mock };
+  let compraRepository: { create: jest.Mock; save: jest.Mock; find: jest.Mock };
   let cartoesService: { findOne: jest.Mock };
 
   beforeEach(async () => {
     compraRepository = {
       create: jest.fn((v) => v),
       save: jest.fn(async (v) => v),
+      find: jest.fn(async () => []),
     };
     cartoesService = {
       findOne: jest.fn(),
@@ -122,5 +123,28 @@ describe('ComprasService', () => {
 
     const cartaoIds = saved.map((s) => s.cartaoId);
     expect(cartaoIds).toEqual(['card-a', 'card-b']);
+  });
+
+  it('faz fallback para o dia anterior ao buscar por data', async () => {
+    compraRepository.find.mockResolvedValueOnce([
+      {
+        id: 'c1',
+        dataCompra: '2026-03-11',
+        horaCompra: '10:00',
+      },
+    ]);
+
+    const result = await service.findByPurchaseDate('2026-03-12');
+    expect(result.map((r) => r.id)).toEqual(['c1']);
+  });
+
+  it('prioriza resultados do dia exato quando existem', async () => {
+    compraRepository.find.mockResolvedValueOnce([
+      { id: 'c1', dataCompra: '2026-03-11', horaCompra: '10:00' },
+      { id: 'c2', dataCompra: '2026-03-12', horaCompra: '09:00' },
+    ]);
+
+    const result = await service.findByPurchaseDate('2026-03-12');
+    expect(result.map((r) => r.id)).toEqual(['c2']);
   });
 });

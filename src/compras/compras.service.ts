@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DeepPartial, In, Repository } from 'typeorm';
 import { Compra } from './compra.entity';
 import { Cartao } from '../cartoes/cartao.entity';
 import { CartoesService } from '../cartoes/cartoes.service';
@@ -17,6 +17,20 @@ export class ComprasService {
     private readonly compraRepository: Repository<Compra>,
     private readonly cartoesService: CartoesService,
   ) {}
+
+  private shiftDateKey(dateKey: string, deltaDays: number) {
+    const [y, m, d] = String(dateKey)
+      .trim()
+      .slice(0, 10)
+      .split('-')
+      .map((v) => Number(v));
+    const dt = new Date(Date.UTC(y, m - 1, d));
+    dt.setUTCDate(dt.getUTCDate() + deltaDays);
+    const year = dt.getUTCFullYear();
+    const month = String(dt.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(dt.getUTCDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
 
   async create(data: Partial<Compra>): Promise<Compra[]> {
     const { cartao: _ignoredCartao, ...incoming } = (data ?? {}) as any;
@@ -119,18 +133,19 @@ export class ComprasService {
     for (let i = 0; i < parcelas; i++) {
       const ym = addMonthsToYearMonth(refYear, refMonth, i);
       const mesReferenciaStr = `${ym.year}-${String(ym.month).padStart(2, '0')}-01`;
-      const compra = this.compraRepository.create({
-        ...incoming,
+      const compraData: DeepPartial<Compra> = {
+        ...(incoming as DeepPartial<Compra>),
         grupoId,
         valorParcela: valorParcela,
         parcelas: parcelas,
         parcelaAtual: i + 1,
-        dataCompra: dataCompraStr as any,
-        mesReferencia: mesReferenciaStr as any,
+        dataCompra: dataCompraStr,
+        mesReferencia: mesReferenciaStr,
         tipo,
         cartaoId: cartao ? cartao.id : null,
         cartao: cartao ?? null,
-      });
+      };
+      const compra = this.compraRepository.create(compraData);
       compras.push(await this.compraRepository.save(compra));
     }
 
@@ -182,14 +197,32 @@ export class ComprasService {
   }
 
   async findByPurchaseDate(date: string): Promise<Compra[]> {
-    return this.compraRepository
-      .createQueryBuilder('compra')
-      .leftJoinAndSelect('compra.cartao', 'cartao')
-      .where('compra.dataCompra = :date', { date })
-      .orderBy('compra.dataCompra', 'ASC')
-      .addOrderBy('compra.horaCompra', 'ASC')
-      .addOrderBy('compra.id', 'ASC')
-      .getMany();
+    const normalized = String(date).trim().slice(0, 10);
+    const fallback = this.shiftDateKey(normalized, -1);
+
+    const compras = await this.compraRepository.find({
+      where: { dataCompra: In([normalized, fallback] as any) },
+      relations: ['cartao'],
+    });
+
+    const matchKey = (value: unknown) => String(value).slice(0, 10);
+    const exact = compras.filter((c) => matchKey(c.dataCompra) === normalized);
+    const chosen =
+      exact.length > 0
+        ? exact
+        : compras.filter((c) => matchKey(c.dataCompra) === fallback);
+
+    return chosen.sort((a, b) => {
+      const aDate = matchKey(a.dataCompra);
+      const bDate = matchKey(b.dataCompra);
+      if (aDate !== bDate) return aDate.localeCompare(bDate);
+
+      const aTime = String(a.horaCompra || '');
+      const bTime = String(b.horaCompra || '');
+      if (aTime !== bTime) return aTime.localeCompare(bTime);
+
+      return String(a.id).localeCompare(String(b.id));
+    });
   }
 
   async findOne(id: string): Promise<Compra> {
