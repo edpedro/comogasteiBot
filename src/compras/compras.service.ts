@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Compra } from './compra.entity';
@@ -15,32 +19,66 @@ export class ComprasService {
   ) {}
 
   async create(data: Partial<Compra>): Promise<Compra[]> {
-    const isCartao = !data.tipo || ['CREDITO', 'DEBITO'].includes(data.tipo);
+    const { cartao: _ignoredCartao, ...incoming } = (data ?? {}) as any;
 
-    if (isCartao && !data.cartaoId) {
-      throw new Error('Cartao ID is required for Credit/Debit');
+    const tipoUpper = incoming.tipo
+      ? String(incoming.tipo).trim().toUpperCase()
+      : 'CREDITO';
+    const tipo = (['CREDITO', 'DEBITO', 'DINHEIRO', 'PIX'] as const).includes(
+      tipoUpper as any,
+    )
+      ? (tipoUpper as Compra['tipo'])
+      : null;
+
+    if (!tipo) {
+      throw new BadRequestException('Tipo inválido');
+    }
+
+    const isCartao = ['CREDITO', 'DEBITO'].includes(tipo);
+
+    const cartaoIdRaw =
+      incoming.cartaoId !== undefined && incoming.cartaoId !== null
+        ? String(incoming.cartaoId).trim()
+        : null;
+
+    if (!isCartao && cartaoIdRaw) {
+      incoming.cartaoId = null;
+    }
+
+    if (isCartao && !cartaoIdRaw) {
+      throw new BadRequestException(
+        'cartaoId é obrigatório para compras no cartão',
+      );
     }
 
     let cartao: Cartao | null = null;
-    if (data.cartaoId) {
-      cartao = await this.cartoesService.findOne(data.cartaoId);
+    if (isCartao && cartaoIdRaw) {
+      cartao = await this.cartoesService.findOne(cartaoIdRaw);
     }
 
     const compras: Compra[] = [];
-    const valorTotal = Number(data.valor);
-    const parcelas = data.parcelas || 1;
+    const valorTotal = Number(incoming.valor);
+    if (!Number.isFinite(valorTotal)) {
+      throw new BadRequestException('valor inválido');
+    }
+
+    const parcelasRaw = Number(incoming.parcelas ?? 1);
+    const parcelas =
+      Number.isFinite(parcelasRaw) && parcelasRaw > 0
+        ? Math.trunc(parcelasRaw)
+        : 1;
     const valorParcela = valorTotal / parcelas;
     const grupoId = randomUUID();
 
     const dataCompraStr =
-      typeof data.dataCompra === 'string'
-        ? String(data.dataCompra).slice(0, 10)
-        : data.dataCompra instanceof Date
-          ? `${data.dataCompra.getFullYear()}-${String(data.dataCompra.getMonth() + 1).padStart(2, '0')}-${String(data.dataCompra.getDate()).padStart(2, '0')}`
+      typeof incoming.dataCompra === 'string'
+        ? String(incoming.dataCompra).slice(0, 10)
+        : incoming.dataCompra instanceof Date
+          ? `${incoming.dataCompra.getFullYear()}-${String(incoming.dataCompra.getMonth() + 1).padStart(2, '0')}-${String(incoming.dataCompra.getDate()).padStart(2, '0')}`
           : null;
 
     if (!dataCompraStr) {
-      throw new Error('Data da compra is required');
+      throw new BadRequestException('dataCompra é obrigatória');
     }
 
     const [purchaseYearStr, purchaseMonthStr, purchaseDayStr] =
@@ -82,13 +120,16 @@ export class ComprasService {
       const ym = addMonthsToYearMonth(refYear, refMonth, i);
       const mesReferenciaStr = `${ym.year}-${String(ym.month).padStart(2, '0')}-01`;
       const compra = this.compraRepository.create({
-        ...data,
+        ...incoming,
         grupoId,
         valorParcela: valorParcela,
         parcelas: parcelas,
         parcelaAtual: i + 1,
         dataCompra: dataCompraStr as any,
         mesReferencia: mesReferenciaStr as any,
+        tipo,
+        cartaoId: cartao ? cartao.id : null,
+        cartao: cartao ?? null,
       });
       compras.push(await this.compraRepository.save(compra));
     }

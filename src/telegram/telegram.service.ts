@@ -36,20 +36,34 @@ export class TelegramService {
 
   @Start()
   async start(@Ctx() ctx: Context) {
-    await ctx.reply(
-      'Bem-vindo ao FinBot! 🤖\n\n' +
-        'Comandos disponíveis:\n' +
-        '/nova - Registrar nova compra\n' +
-        '/listar - Selecionar fatura por botões\n' +
-        '/fatura - Ver fatura (ex: /fatura Pao de Acucar)\n' +
-        '/compras - Listar compras (ex: /compras 04 nubank)\n' +
-        '/editar - Editar compra (seleção por data)\n' +
-        '/cancelar - Remover compra (seleção por data)\n' +
-        '/pdf - Baixar relatório PDF\n' +
-        '/cartoes - Listar cartões\n' +
-        '/novo_cartao - Cadastrar novo cartão\n' +
-        '/ajuda - Ver todos os comandos',
-    );
+    const msg = [
+      '<b>FinBot</b>',
+      '',
+      '<b>Compras</b>',
+      '<code>/nova</code> Registrar nova compra (por botões)',
+      '<code>/compras</code> Listar compras do mês',
+      '<code>/fatura</code> Ver fatura do mês',
+      '<code>/editar</code> Editar compra (seleção por data)',
+      '<code>/cancelar</code> Remover compra (seleção por data)',
+      '',
+      '<b>Cartões</b>',
+      '<code>/cartoes</code> Listar cartões',
+      '<code>/novo_cartao</code> Cadastrar novo cartão',
+      '',
+      '<b>Relatórios</b>',
+      '<code>/listar</code> Selecionar fatura por botões (mês atual)',
+      '<code>/pdf</code> Baixar relatório PDF',
+      '',
+      '<b>Exemplos</b>',
+      '<pre>/compras 04 nubank\n/compras 03/2026 itau\n/fatura nubank</pre>',
+      '',
+      '<i>Dica:</i> use <code>/nova</code> para escolher o cartão por botões.',
+    ].join('\n');
+
+    await ctx.reply(msg, {
+      parse_mode: 'HTML',
+      disable_web_page_preview: true,
+    });
   }
 
   @Command('ajuda')
