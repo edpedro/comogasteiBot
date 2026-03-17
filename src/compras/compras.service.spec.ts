@@ -7,7 +7,7 @@ import { CartoesService } from '../cartoes/cartoes.service';
 describe('ComprasService', () => {
   let service: ComprasService;
   let compraRepository: { create: jest.Mock; save: jest.Mock; find: jest.Mock };
-  let cartoesService: { findOne: jest.Mock };
+  let cartoesService: { findOne: jest.Mock; findAll: jest.Mock };
 
   beforeEach(async () => {
     compraRepository = {
@@ -17,6 +17,7 @@ describe('ComprasService', () => {
     };
     cartoesService = {
       findOne: jest.fn(),
+      findAll: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -146,5 +147,49 @@ describe('ComprasService', () => {
 
     const result = await service.findByPurchaseDate('2026-03-12');
     expect(result.map((r) => r.id)).toEqual(['c2']);
+  });
+
+  it('busca cartão ignorando acentos no nome', async () => {
+    const qb = {
+      leftJoinAndSelect: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      addOrderBy: jest.fn().mockReturnThis(),
+      getMany: jest.fn(async () => []),
+    };
+    (compraRepository as any).createQueryBuilder = jest.fn(() => qb);
+
+    cartoesService.findAll.mockResolvedValueOnce([
+      { id: 'id-itau', nome: 'Itaú' },
+      { id: 'id-santander', nome: 'Santander' },
+    ]);
+
+    await service.findByCardAndMonth('itau', '2026-03');
+
+    expect(cartoesService.findAll).toHaveBeenCalledTimes(1);
+    expect(qb.andWhere).toHaveBeenCalledWith('cartao.id IN (:...cardIds)', {
+      cardIds: ['id-itau'],
+    });
+  });
+
+  it('lista compras por mês de compra (dataCompra)', async () => {
+    const qb = {
+      leftJoinAndSelect: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      addOrderBy: jest.fn().mockReturnThis(),
+      getMany: jest.fn(async () => []),
+    };
+    (compraRepository as any).createQueryBuilder = jest.fn(() => qb);
+
+    await service.findByPurchaseMonth('2026-03');
+    expect(qb.where).toHaveBeenCalledWith('compra.dataCompra >= :start', {
+      start: '2026-03-01',
+    });
+    expect(qb.andWhere).toHaveBeenCalledWith('compra.dataCompra < :end', {
+      end: '2026-04-01',
+    });
   });
 });

@@ -159,10 +159,9 @@ export class TelegramService {
     }
     const cardName = cardNameParts.join(' ');
 
-    const compras = await this.comprasService.findByCardAndMonth(
-      cardName,
-      month,
-    );
+    const compras = cardName
+      ? await this.comprasService.findByCardAndPurchaseMonth(cardName, month)
+      : await this.comprasService.findByPurchaseMonth(month);
 
     if (compras.length === 0) {
       return ctx.reply(
@@ -238,14 +237,17 @@ export class TelegramService {
   @Command('listar')
   async listarFaturas(@Ctx() ctx: Context) {
     const cartoes = await this.cartoesService.findAll();
-    const buttons = cartoes.map((c) =>
-      Markup.button.callback(c.nome, `list_card:${c.id}`),
-    );
+    const buttons = [
+      Markup.button.callback('📋 Todos', 'list_card:ALL'),
+      ...cartoes.map((c) =>
+        Markup.button.callback(c.nome, `list_card:${c.id}`),
+      ),
+    ];
     buttons.push(Markup.button.callback('💵 Dinheiro', 'list_card:DINHEIRO'));
     buttons.push(Markup.button.callback('💠 Pix', 'list_card:PIX'));
 
     await ctx.reply(
-      'Selecione o cartão/tipo para ver a fatura (mês atual):',
+      'Selecione o cartão/tipo para ver as compras (mês atual):',
       Markup.inlineKeyboard(buttons, { columns: 2 }),
     );
   }
@@ -358,10 +360,10 @@ export class TelegramService {
     const month = this.saoPauloNowMonthKey();
 
     try {
-      const compras = await this.comprasService.findByCardAndMonth(
-        cardId,
-        month,
-      );
+      const compras =
+        cardId === 'ALL'
+          ? await this.comprasService.findByPurchaseMonth(month)
+          : await this.comprasService.findByCardAndPurchaseMonth(cardId, month);
 
       let cardName = cardId;
       // Try to find card name if it's a UUID
@@ -373,19 +375,33 @@ export class TelegramService {
         const card = await this.cartoesService.findOne(cardId);
         if (card) cardName = card.nome;
       }
+      if (cardId === 'ALL') {
+        cardName = 'Todos';
+      }
 
       if (compras.length === 0) {
         await ctx.reply(
           `Nenhuma fatura encontrada para ${cardName} em ${month}.`,
         );
       } else {
-        let msg = `📄 Fatura ${month} (${cardName}):\nData | Desc | Valor | Nome\n--------------------------\n`;
+        let msg =
+          cardId === 'ALL'
+            ? `🛒 Compras ${month} (${cardName}):\nData | Cartão | Desc | Valor | Nome\n--------------------------\n`
+            : `🛒 Compras ${month} (${cardName}):\nData | Desc | Valor | Nome\n--------------------------\n`;
         let total = 0;
         for (const c of compras) {
           const valor = Number(c.valorParcela);
           total += valor;
           const date = this.formatCompraDate(c.dataCompra);
-          msg += `${date} | ${c.descricao} | R$${valor.toFixed(2)} | ${c.nome}\n`;
+          if (cardId === 'ALL') {
+            const origem =
+              c.tipo === 'DINHEIRO' || c.tipo === 'PIX'
+                ? c.tipo
+                : c.cartao?.nome || 'CARTAO';
+            msg += `${date} | ${origem} | ${c.descricao} | R$${valor.toFixed(2)} | ${c.nome}\n`;
+          } else {
+            msg += `${date} | ${c.descricao} | R$${valor.toFixed(2)} | ${c.nome}\n`;
+          }
         }
         msg += `--------------------------\n💰 Total: R$ ${total.toFixed(2)}`;
         await ctx.reply(msg);

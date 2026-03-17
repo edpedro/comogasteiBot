@@ -32,6 +32,25 @@ export class ComprasService {
     return `${year}-${month}-${day}`;
   }
 
+  private normalizeSearch(value: string) {
+    return String(value || '')
+      .trim()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+  }
+
+  private monthBounds(monthKey: string) {
+    const key = String(monthKey).trim();
+    const start = `${key}-01`;
+    const [y, m] = key.split('-').map((v) => Number(v));
+    const total = y * 12 + (m - 1) + 1;
+    const nextY = Math.floor(total / 12);
+    const nextM = (total % 12) + 1;
+    const end = `${nextY}-${String(nextM).padStart(2, '0')}-01`;
+    return { start, end };
+  }
+
   async create(data: Partial<Compra>): Promise<Compra[]> {
     const { cartao: _ignoredCartao, ...incoming } = (data ?? {}) as any;
 
@@ -165,6 +184,68 @@ export class ComprasService {
     });
   }
 
+  async findByPurchaseMonth(month: string): Promise<Compra[]> {
+    const { start, end } = this.monthBounds(month);
+    return this.compraRepository
+      .createQueryBuilder('compra')
+      .leftJoinAndSelect('compra.cartao', 'cartao')
+      .where('compra.dataCompra >= :start', { start })
+      .andWhere('compra.dataCompra < :end', { end })
+      .orderBy('compra.dataCompra', 'ASC')
+      .addOrderBy('compra.horaCompra', 'ASC')
+      .addOrderBy('compra.id', 'ASC')
+      .getMany();
+  }
+
+  async findByCardAndPurchaseMonth(
+    cardFilter: string,
+    month: string,
+  ): Promise<Compra[]> {
+    const { start, end } = this.monthBounds(month);
+    const query = this.compraRepository
+      .createQueryBuilder('compra')
+      .leftJoinAndSelect('compra.cartao', 'cartao')
+      .where('compra.dataCompra >= :start', { start })
+      .andWhere('compra.dataCompra < :end', { end });
+
+    if (cardFilter) {
+      const upper = String(cardFilter).trim().toUpperCase();
+      if (upper === 'DINHEIRO' || upper === 'PIX') {
+        query.andWhere('compra.tipo = :tipo', { tipo: upper });
+      } else {
+        const isUuid =
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+            cardFilter,
+          );
+        if (isUuid) {
+          query.andWhere('cartao.id = :cardId', { cardId: cardFilter });
+        } else {
+          const search = this.normalizeSearch(cardFilter);
+          const cartoes = await this.cartoesService.findAll();
+          const matchingIds = cartoes
+            .filter((c) => this.normalizeSearch(c.nome).includes(search))
+            .map((c) => c.id);
+
+          if (matchingIds.length > 0) {
+            query.andWhere('cartao.id IN (:...cardIds)', {
+              cardIds: matchingIds,
+            });
+          } else {
+            query.andWhere('cartao.nome ILIKE :cardName', {
+              cardName: `%${cardFilter}%`,
+            });
+          }
+        }
+      }
+    }
+
+    return query
+      .orderBy('compra.dataCompra', 'ASC')
+      .addOrderBy('compra.horaCompra', 'ASC')
+      .addOrderBy('compra.id', 'ASC')
+      .getMany();
+  }
+
   async findByCardAndMonth(cardName: string, month: string): Promise<Compra[]> {
     const date = `${month}-01`;
     const query = this.compraRepository
@@ -186,9 +267,21 @@ export class ComprasService {
         if (isUuid) {
           query.andWhere('cartao.id = :cardId', { cardId: cardName });
         } else {
-          query.andWhere('cartao.nome ILIKE :cardName', {
-            cardName: `%${cardName}%`,
-          });
+          const search = this.normalizeSearch(cardName);
+          const cartoes = await this.cartoesService.findAll();
+          const matchingIds = cartoes
+            .filter((c) => this.normalizeSearch(c.nome).includes(search))
+            .map((c) => c.id);
+
+          if (matchingIds.length > 0) {
+            query.andWhere('cartao.id IN (:...cardIds)', {
+              cardIds: matchingIds,
+            });
+          } else {
+            query.andWhere('cartao.nome ILIKE :cardName', {
+              cardName: `%${cardName}%`,
+            });
+          }
         }
       }
     }
